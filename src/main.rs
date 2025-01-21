@@ -47,7 +47,7 @@ fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut
     for (line, column, char) in code.lines().enumerate().flat_map(|(line, s)| {
         s.chars()
             .enumerate()
-            .map(move |(column, c)| (line, column, c))
+            .map(move |(column, c)| (line + 1, column + 1, c))
     }) {
         if let Some(looped) = &mut looped {
             looped.push(char);
