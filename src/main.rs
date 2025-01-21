@@ -61,13 +61,23 @@ fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut
                 *ptr -= 1;
             }
             '+' => {
-                buf.entry(*ptr).and_modify(|v| *v += 1).or_insert(1);
+                buf.entry(*ptr)
+                    .and_modify(|v| {
+                        if *v == u8::MAX {
+                            *v = 0;
+                        } else {
+                            *v += 1;
+                        }
+                    })
+                    .or_insert(1);
             }
             '-' => {
                 buf.entry(*ptr)
                     .and_modify(|v| {
-                        if *v > 0 {
-                            *v -= 1
+                        if *v == 0 {
+                            *v = u8::MAX;
+                        } else {
+                            *v -= 1;
                         }
                     })
                     .or_insert(0);
