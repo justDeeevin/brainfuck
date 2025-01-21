@@ -3,10 +3,12 @@
 use rustyline::error::ReadlineError;
 use std::{collections::HashMap, fs::File, io::Read};
 
+type Key = i32;
+
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
 
-    let mut buf: HashMap<i32, u8> = HashMap::new();
+    let mut buf = HashMap::new();
     let mut ptr = 0;
 
     if let Some(path) = args.get(1) {
@@ -34,7 +36,7 @@ fn main() {
     }
 }
 
-fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<i32, u8>, ptr: &mut i32) {
+fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut i32) {
     let mut looped: Option<Vec<char>> = None;
 
     for (line, column, char) in code.lines().enumerate().flat_map(|(line, s)| {
