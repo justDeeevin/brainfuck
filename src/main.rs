@@ -1,5 +1,3 @@
-#![feature(ascii_char)]
-
 use rustyline::error::ReadlineError;
 use std::{collections::HashMap, fs::File, io::Read};
 
