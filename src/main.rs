@@ -13,14 +13,15 @@ fn main() {
         let mut file = File::open(path).unwrap();
         let mut code = String::new();
         file.read_to_string(&mut code).unwrap();
-        eval(&code, 0, &mut buf, &mut ptr);
+        eval(&code, 0, &mut buf, &mut ptr, false);
     } else {
+        println!("Brainfuck REPL");
         loop {
             let mut rl = rustyline::DefaultEditor::new().unwrap();
             let line = rl.readline(">> ");
             match line {
                 Ok(line) => {
-                    eval(&line, 0, &mut buf, &mut ptr);
+                    eval(&line, 0, &mut buf, &mut ptr, true);
                     println!();
                 }
                 Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
@@ -34,8 +35,14 @@ fn main() {
     }
 }
 
-fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut i32) {
+fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut i32, repl: bool) {
     let mut looped: Option<Vec<char>> = None;
+
+    if code == "!" && repl {
+        buf.clear();
+        *ptr = 0;
+        return;
+    }
 
     for (line, column, char) in code.lines().enumerate().flat_map(|(line, s)| {
         s.chars()
@@ -86,7 +93,7 @@ fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut
                 };
                 let code = code.iter().take(code.len() - 1).collect::<String>();
                 while !(buf.get(ptr).is_none() || buf.get(ptr) == Some(&0)) {
-                    eval(&code, column + col_offset, buf, ptr);
+                    eval(&code, column + col_offset, buf, ptr, false);
                 }
                 looped = None;
             }
