@@ -1,0 +1,8 @@
+[package]
+name = "brainfuck"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+console = "0.15.10"
+rustyline = "15.0.0"
