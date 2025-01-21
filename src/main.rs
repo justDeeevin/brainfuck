@@ -1,31 +1,84 @@
 use rustyline::error::ReadlineError;
-use std::{collections::HashMap, fs::File, io::Read};
+use std::{
+    collections::{HashMap, VecDeque},
+    fs::File,
+    io::Read,
+};
 
 type Key = i32;
+
+#[derive(Debug)]
+struct Token {
+    pub line: usize,
+    pub column: usize,
+    pub token_type: TokenType,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum TokenType {
+    Right,
+    Left,
+    Plus,
+    Minus,
+    Out,
+    In,
+    JumpForward(Option<usize>),
+    JumpBackward(Option<usize>),
+    Ignore,
+}
+
+impl From<char> for TokenType {
+    fn from(value: char) -> Self {
+        match value {
+            '>' => TokenType::Right,
+            '<' => TokenType::Left,
+            '+' => TokenType::Plus,
+            '-' => TokenType::Minus,
+            '.' => TokenType::Out,
+            ',' => TokenType::In,
+            '[' => TokenType::JumpForward(None),
+            ']' => TokenType::JumpBackward(None),
+            _ => TokenType::Ignore,
+        }
+    }
+}
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
 
     let mut buf = HashMap::new();
-    let mut ptr = 0;
+    let mut head = 0;
 
     if let Some(path) = args.get(1) {
         let mut file = File::open(path).unwrap();
         let mut code = String::new();
         file.read_to_string(&mut code).unwrap();
-        eval(&code, 0, &mut buf, &mut ptr, false);
+        run(&parse(&code), &mut buf, &mut head).unwrap();
     } else {
         println!("Brainfuck REPL");
+        println!("Ctrl-D to exit");
+        println!("Send \"!\" to reset");
         loop {
             let mut rl = rustyline::DefaultEditor::new().unwrap();
             let line = rl.readline(">> ");
             match line {
                 Ok(line) => {
-                    eval(&line, 0, &mut buf, &mut ptr, true);
-                    println!();
+                    if line == "!" {
+                        buf.clear();
+                        head = 0;
+                        continue;
+                    }
+                    if let Err(e) = run(&parse(&line), &mut buf, &mut head) {
+                        println!("{}", e);
+                    } else {
+                        println!();
+                    }
                 }
-                Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
+                Err(ReadlineError::Eof) => {
                     break;
+                }
+                Err(ReadlineError::Interrupted) => {
+                    continue;
                 }
                 Err(err) => {
                     panic!("{}", err);
@@ -35,33 +88,49 @@ fn main() {
     }
 }
 
-fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut i32, repl: bool) {
-    let mut looped: Option<Vec<char>> = None;
-
-    if code == "!" && repl {
-        buf.clear();
-        *ptr = 0;
-        return;
+fn parse(code: &str) -> Vec<Token> {
+    let mut tokens: Vec<Token> = Vec::new();
+    let mut opens = VecDeque::new();
+    for (i, (line, column, char)) in code
+        .lines()
+        .enumerate()
+        .flat_map(|(line, s)| {
+            s.chars()
+                .enumerate()
+                .map(move |(column, c)| (line + 1, column + 1, c))
+        })
+        .enumerate()
+    {
+        let mut token_type = char.into();
+        if token_type == TokenType::JumpForward(None) {
+            opens.push_back(i);
+        }
+        if token_type == TokenType::JumpBackward(None) {
+            if let Some(back) = opens.pop_back() {
+                tokens[back].token_type = TokenType::JumpForward(Some(i + 1));
+                token_type = TokenType::JumpBackward(Some(back + 1));
+            }
+        }
+        let token = Token {
+            line,
+            column,
+            token_type,
+        };
+        tokens.push(token);
     }
 
-    for (line, column, char) in code.lines().enumerate().flat_map(|(line, s)| {
-        s.chars()
-            .enumerate()
-            .map(move |(column, c)| (line + 1, column + 1, c))
-    }) {
-        if let Some(looped) = &mut looped {
-            looped.push(char);
-        }
+    tokens
+}
 
-        match char {
-            '>' => {
-                *ptr += 1;
-            }
-            '<' => {
-                *ptr -= 1;
-            }
-            '+' => {
-                buf.entry(*ptr)
+fn run(tokens: &[Token], buf: &mut HashMap<Key, u8>, head: &mut Key) -> Result<(), String> {
+    let mut instruction = 0;
+    while let Some(token) = tokens.get(instruction) {
+        match token.token_type {
+            TokenType::Ignore => {}
+            TokenType::Right => *head += 1,
+            TokenType::Left => *head -= 1,
+            TokenType::Plus => {
+                buf.entry(*head)
                     .and_modify(|v| {
                         if *v == u8::MAX {
                             *v = 0;
@@ -71,8 +140,8 @@ fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut
                     })
                     .or_insert(1);
             }
-            '-' => {
-                buf.entry(*ptr)
+            TokenType::Minus => {
+                buf.entry(*head)
                     .and_modify(|v| {
                         if *v == 0 {
                             *v = u8::MAX;
@@ -80,35 +149,44 @@ fn eval(code: &str, mut col_offset: usize, buf: &mut HashMap<Key, u8>, ptr: &mut
                             *v -= 1;
                         }
                     })
-                    .or_insert(0);
+                    .or_insert(u8::MAX);
             }
-            '.' => {
-                print!("{}", buf.get(ptr).copied().unwrap_or(0) as char);
+            TokenType::Out => {
+                print!("{}", buf.get(head).copied().unwrap_or(0) as char);
             }
-            ',' => {
+            TokenType::In => {
                 let input = console::Term::stdout().read_char().unwrap();
                 print!("{}", input);
-                buf.insert(*ptr, input as u8);
+                buf.insert(*head, input as u8);
             }
-            '[' => {
-                looped = Some(Vec::new());
-            }
-            ']' => {
-                let Some(code) = &looped else {
-                    panic!(
-                        "Unmatched ']' (at line {} column {})",
-                        line,
-                        column + col_offset
-                    );
-                };
-                let code = code.iter().take(code.len() - 1).collect::<String>();
-                while !(buf.get(ptr).is_none() || buf.get(ptr) == Some(&0)) {
-                    eval(&code, column + col_offset, buf, ptr, false);
+            TokenType::JumpForward(Some(i)) => {
+                if buf.get(head).copied().unwrap_or(0) == 0 {
+                    instruction = i;
+                    continue;
                 }
-                looped = None;
             }
-            _ => continue,
+            TokenType::JumpBackward(Some(i)) => {
+                if buf.get(head).copied().unwrap_or(0) != 0 {
+                    instruction = i;
+                    continue;
+                }
+            }
+            TokenType::JumpForward(None) => {
+                return Err(format!(
+                    "Unmatched '[' (line {} column {})",
+                    token.line, token.column
+                ));
+            }
+            TokenType::JumpBackward(None) => {
+                return Err(format!(
+                    "Unmatched ']' (line {} column {})",
+                    token.line, token.column
+                ));
+            }
         }
-        col_offset = 0;
+
+        instruction += 1;
     }
+
+    Ok(())
 }
